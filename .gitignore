@@ -1,0 +1,9 @@
+# Ignore compiled executable
+chkinetup
+
+# Ignore object files
+*.o
+
+# Ignore logs
+$HOME/log/
+
