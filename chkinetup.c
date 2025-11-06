@@ -1,3 +1,10 @@
+/*
+ * chkinetup.c
+ * 
+ * Copyright (c) 2025 Your Name
+ * Licensed under the MIT License. See LICENSE file for details.
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
