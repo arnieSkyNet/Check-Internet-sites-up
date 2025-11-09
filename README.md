@@ -40,6 +40,25 @@ chkinetup 5 -d
 Show help:
 ```bash
 chkinetup -h
+chkinetup v0.09 - Internet connectivity checker
+
+Usage: chkinetup [options] [delay]
+
+Options:
+  -h, --help              Show this help message and exit
+  -d, --debug             Enable debug output to screen
+  -l, --logfile <name>    Set logfile name (default: <hostname>.log)
+  -L, --logdir <path>     Set logfile directory (default: $HOME/log)
+  -c, --checkfile <file>  File containing list of hosts to check
+  -C, --clearfile         Ignore existing host file if exists
+  -H, --builtin-hosts     Use built-in host list
+  -v, --version           Show program version
+
+Positional args:
+  delay                   Interval in seconds between checks (default: 5)
+
+Written by ChatGPT vGPT-5-mini via guidance and design by 
+
 ```
 ### Log Files
 - Default log location:
