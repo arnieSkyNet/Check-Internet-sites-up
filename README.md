@@ -24,6 +24,7 @@ Build the binary:
 make
 mv chkinetup ~/sbin/
 ```
+if you use ~/sbin as your location for your scripts and programs
 Ensure `~/sbin` is in your PATH if you want to run it from anywhere:
 ```bash
 export PATH="$HOME/sbin:$PATH"
@@ -81,13 +82,13 @@ You can change the target hosts or interval at the top of the script to suit you
 
 ## 📋 Log Output Example
 ```text
-[08:11:2025 22:02:30 chkinetup 5 v0.09] arnie - stopped
-[08:11:2025 22:02:39 chkinetup 5 v0.09] arnie - started
+[08:11:2025 22:02:30 chkinetup 5 v0.09] <HOST> - stopped
+[08:11:2025 22:02:39 chkinetup 5 v0.09] <HOST> - started
 [08:11:2025 22:02:40 chkinetup 5 v0.09] www.google.com - unreachable
 [08:11:2025 22:02:40 chkinetup 5 v0.09] www.cloudflare.com - unreachable
 [08:11:2025 22:02:40 chkinetup 5 v0.09] www.microsoft.com - unreachable
 [08:11:2025 22:02:40 chkinetup 5 v0.09] www.amazon.com - unreachable
-[08:11:2025 22:02:40 chkinetup 5 v0.09] arnie - All hosts unreachable
+[08:11:2025 22:02:40 chkinetup 5 v0.09] <HOST> - All hosts unreachable
 [08:11:2025 22:03:11 chkinetup 5 v0.09] www.google.com - connectivity restored
 [08:11:2025 22:03:21 chkinetup 5 v0.09] www.google.com - Global connectivity restored
 ```
@@ -95,8 +96,7 @@ You can change the target hosts or interval at the top of the script to suit you
 ---
 
 ## 🧾 Requirements
-- Linux OS  
-- Standard networking tools (ping, bash)  
+- Linux OS 
 - GCC / make (for building from source)
 
 ---
