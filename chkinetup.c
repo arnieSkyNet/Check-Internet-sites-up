@@ -49,12 +49,12 @@ void usage(FILE *stream) {
         "  -l, --logfile <name>    Set logfile name (default: <hostname>.log)\n"
         "  -L, --logdir <path>     Set logfile directory (default: $HOME/log)\n"
         "  -c, --checkfile <file>  File containing list of hosts to check\n"
-        "  -C, --clearfile          Ignore existing host file if exists\n"
-        "  -H, --builtin-hosts      Use built-in host list\n"
+        "  -C, --clearfile         Ignore existing host file if exists\n"
+        "  -H, --builtin-hosts     Use built-in host list\n"
         "  -v, --version           Show program version\n\n"
         "Positional args:\n"
         "  delay                   Interval in seconds between checks (default: 5)\n\n"
-        "Written by ChatGPT vGPT-5-mini via guidance and design by Mark\n",
+        "Written by ChatGPT vGPT-5-mini via guidance and design and massive corrections by ArnieSkyNet\n",
         PROGRAM, VERSION, PROGRAM
     );
 }
