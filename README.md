@@ -57,7 +57,7 @@ Options:
 Positional args:
   delay                   Interval in seconds between checks (default: 5)
 
-Written by ChatGPT vGPT-5-mini via guidance and design by 
+Written by ChatGPT vGPT-5-mini via guidance and design by ArnieSkyNet
 
 ```
 ### Log Files
