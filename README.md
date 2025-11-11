@@ -12,6 +12,33 @@
 - No dependencies beyond standard Linux tools  
 
 ---
+## 🔍 How Connectivity Is Checked (No Ping Required)
+
+`chkinetup` does **not** use ICMP ping.  
+Instead, it performs a **real TCP connection attempt** to each configured host on **port 443** (HTTPS). This method checks more meaningful, real-world connectivity.
+
+### ✅ Why TCP Port 443?
+- HTTPS (443) is almost always allowed through firewalls
+- Confirms **DNS resolution + route availability + service responsiveness**
+- Detects real connectivity outages that a ping may **miss**
+
+### ⚙️ How It Works (Simplified)
+For each host, every `N` seconds:
+1. Resolve its IP using `getaddrinfo()`
+2. Attempt a **non-blocking** TCP socket connection
+3. Wait briefly using `select()` (timeout)
+4. Treat it as:
+   - ✅ *Up* if the TCP handshake succeeds
+   - ❌ *Unreachable* if it fails or times out
+
+### 🧠 Why This Matters
+Unlike ping:
+- Doesn’t rely on ICMP (often blocked)
+- Tests real internet usability
+- More accurate for detecting failures that impact web browsing, streaming, VPN, etc.
+
+> In short: If `chkinetup` says your internet is down…  
+> your apps will **definitely** feel it too. ✅
 
 ## 🛠️ Build & Install
 Clone the repository:
