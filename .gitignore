@@ -18,6 +18,7 @@ $HOME/log/           # ignore user-specific logs
 # IDE / Visual Studio files
 # -----------------------------
 *.user
+*.sin
 *.suo
 *.ncb
 *.opensdf
