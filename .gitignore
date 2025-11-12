@@ -1,9 +1,37 @@
-# Ignore compiled executable
-chkinetup
+# -----------------------------
+# Build outputs
+# -----------------------------
+chkinetup            # ignore main executable
+*.exe                # ignore any other exe
+*.o                  # ignore object files
+*.pdb                # debug symbols
+*.ilk                # incremental linker file
+*.idb                # MSVC intermediate database
 
-# Ignore object files
-*.o
+# -----------------------------
+# Logs
+# -----------------------------
+$HOME/log/           # ignore user-specific logs
+*.log                # ignore any log files
 
-# Ignore logs
-$HOME/log/
+# -----------------------------
+# IDE / Visual Studio files
+# -----------------------------
+*.user
+*.suo
+*.ncb
+*.opensdf
+*.sdf
+*.vcxproj*
+*.vcxproj.filters
+# Visual Studio workspace files
+.vs/
+chkinetup_win/.vs/
 
+# -----------------------------
+# Build folders
+# -----------------------------
+Debug/
+Release/
+x64/
+x86/
