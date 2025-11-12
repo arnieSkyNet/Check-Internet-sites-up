@@ -40,7 +40,7 @@ Unlike ping:
 > In short: If `chkinetup` says your internet is down…  
 > your apps will **definitely** feel it too. ✅
 
-## 🛠️ Build & Install
+## 🛠️ Linux Build & Install
 Clone the repository:
 ```bash
 git clone https://github.com/arnieSkyNet/Check-Internet-sites-up.git
@@ -57,6 +57,43 @@ Ensure `~/sbin` is in your PATH if you want to run it from anywhere:
 export PATH="$HOME/sbin:$PATH"
 ```
 
+### Windows Build & Run
+
+Clone the repository:
+git clone https://github.com/arnieSkyNet/Check-Internet-sites-up.git
+cd Check-Internet-sites-up
+
+Open the Visual Studio solution:
+chkinetup_win\chkinetup_win.sln
+
+Build the solution (choose Debug or Release). The executable will be located in:
+chkinetup_win\x64\Debug\chkinetup_win.exe
+or
+chkinetup_win\x64\Release\chkinetup_win.exe
+
+Run the program:
+- Double-click the .exe to open the GUI window.
+- Or run from a command prompt to attach a console:
+chkinetup_win.exe -d
+
+Optional command-line arguments:
+- -d : attach console window
+- -N : console-only mode
+- -G : force GUI window
+- -q : quit immediately
+- delay : seconds between host checks
+
+Log files:
+- Default location: %USERPROFILE%\log\
+- Use -l <filename> to set logfile name, -L <path> to set logfile directory
+
+Key bindings when GUI is open:
+- ? : display full help
+- H : display current host list
+- D/d : increase/decrease check interval
+- L : show log file contents and full path
+- Q : quit program
+- G : open GUI window if currently running console-only
 ---
 
 ## ▶️ Usage
