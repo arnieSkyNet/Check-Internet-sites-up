@@ -29,7 +29,7 @@
 
  // -------------------- Constants --------------------
 #define PROGRAM "chkinetup"
-#define VERSION "v0.10"
+#define VERSION "v0.10.02"
 #define MAX_HOSTS 50
 #define HOSTNAME_LEN 128
 #define USERNAME_LEN 64
@@ -354,8 +354,9 @@ HWND create_gui_window(void) {
     wc.lpszClassName = "CheckWindowClass";
     wc.hCursor = LoadCursor(NULL, IDC_ARROW);
     RegisterClassA(&wc);
-
-    HWND hwnd = CreateWindowA("CheckWindowClass", "Check Internet Sites Up",
+    char title[128];
+    snprintf(title, sizeof(title), "Check Internet Sites Up %s (by arnieSkyNet)", VERSION);
+    HWND hwnd = CreateWindowA("CheckWindowClass", title,
         WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 740, 520,
         NULL, NULL, GetModuleHandle(NULL), NULL);
     if (!hwnd) return NULL;
@@ -372,7 +373,9 @@ HWND create_gui_window(void) {
     UpdateWindow(hwnd);
 
     // initial header: host list + delay + key hints
-    append_to_gui_raw("=== Check Internet Sites Up ===\r\n");
+    char intro[256];
+    snprintf(intro, sizeof(intro), "=== Check Internet Sites Up %s (by arnieSkyNeyt) ===\r\n", VERSION);
+    append_to_gui_raw(intro);
     append_to_gui_raw("Keys: ?=Help (or 'h')  H=Hosts  D/d=Delay +/-  L=Log  Q=Quit  G=Open/Bring GUI\r\n");
     char header[256];
     snprintf(header, sizeof(header), "Current delay: %d seconds\r\n", interval);
