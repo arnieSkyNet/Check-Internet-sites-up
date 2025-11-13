@@ -1,9 +1,10 @@
 # 🛠️ Windows Build & Run
 
 ## Clone Repository
+<pre>
 git clone https://github.com/arnieSkyNet/Check-Internet-sites-up.git
 cd Check-Internet-sites-up
-
+</pre>
 ## Open Visual Studio Solution
 Open the solution file in Visual Studio:
 chkinetup_win\chkinetup_win.sln
