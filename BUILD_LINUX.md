@@ -2,6 +2,7 @@
 
 ## Clone Repository
 git clone https://github.com/arnieSkyNet/Check-Internet-sites-up.git
+
 cd Check-Internet-sites-up
 
 ## Dependencies / Libraries
