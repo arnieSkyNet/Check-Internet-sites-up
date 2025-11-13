@@ -5,7 +5,7 @@
 ---
 
 ## ✨ Features
-- Runs on Raspberry Pi and standard Linux systems  
+- Runs on Raspberry Pi and standard Linux systems aswell as MS Windows 
 - Detects Internet connectivity loss quickly  
 - Logs failures and restorations with timestamps  
 - Lightweight — suitable for background service use  
