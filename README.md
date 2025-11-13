@@ -3,15 +3,14 @@
 **Check Internet Up** (`chkinetup`) is a lightweight Linux internet connectivity monitor, ideal for Raspberry Pi, home automation, and remote-access systems. It regularly checks connectivity and logs outages, helping diagnose Wi-Fi drops, router failures, or ISP issues.  
 
 ---
-
 ## ✨ Features
-- Runs on Raspberry Pi and standard Linux systems aswell as MS Windows 
-- Detects Internet connectivity loss quickly  
-- Logs failures and restorations with timestamps  
-- Lightweight — suitable for background service use  
-- No dependencies beyond standard Linux tools  
-
+- Runs on Raspberry Pi, Linux, and Windows
+- Detects Internet connectivity loss quickly
+- Logs failures and restorations with timestamps
+- Lightweight — suitable for background service use
+- No dependencies beyond standard tools
 ---
+
 ## 🔍 How Connectivity Is Checked (No Ping Required)
 
 `chkinetup` does **not** use ICMP ping.  
@@ -40,60 +39,12 @@ Unlike ping:
 > In short: If `chkinetup` says your internet is down…  
 > your apps will **definitely** feel it too. ✅
 
-## 🛠️ Linux Build & Install
-Clone the repository:
-```bash
-git clone https://github.com/arnieSkyNet/Check-Internet-sites-up.git
-cd Check-Internet-sites-up
-```
-Build the binary:
-```bash
-make
-mv chkinetup ~/sbin/
-```
-if you use ~/sbin as your location for your scripts and programs
-Ensure `~/sbin` is in your PATH if you want to run it from anywhere:
-```bash
-export PATH="$HOME/sbin:$PATH"
-```
+## 🛠️ Build & Install
+Platform-specific build instructions are in separate files:
 
-### Windows Build & Run
+- [Linux / Raspberry Pi Build](BUILD_LINUX.md)  
+- [Windows Build](BUILD_WINDOWS.md)
 
-Clone the repository:
-git clone https://github.com/arnieSkyNet/Check-Internet-sites-up.git
-cd Check-Internet-sites-up
-
-Open the Visual Studio solution:
-chkinetup_win\chkinetup_win.sln
-
-Build the solution (choose Debug or Release). The executable will be located in:
-chkinetup_win\x64\Debug\chkinetup_win.exe
-or
-chkinetup_win\x64\Release\chkinetup_win.exe
-
-Run the program:
-- Double-click the .exe to open the GUI window.
-- Or run from a command prompt to attach a console:
-chkinetup_win.exe -d
-
-Optional command-line arguments:
-- -d : attach console window
-- -N : console-only mode
-- -G : force GUI window
-- -q : quit immediately
-- delay : seconds between host checks
-
-Log files:
-- Default location: %USERPROFILE%\log\
-- Use -l <filename> to set logfile name, -L <path> to set logfile directory
-
-Key bindings when GUI is open:
-- ? : display full help
-- H : display current host list
-- D/d : increase/decrease check interval
-- L : show log file contents and full path
-- Q : quit program
-- G : open GUI window if currently running console-only
 ---
 
 ## ▶️ Linux Usage
