@@ -1,10 +1,10 @@
 # 🛠️ Linux / Raspberry Pi Build & Install
 
 ## Clone Repository
+<pre>
 git clone https://github.com/arnieSkyNet/Check-Internet-sites-up.git
-
 cd Check-Internet-sites-up
-
+</pre>
 ## Dependencies / Libraries
 Before building, ensure the required packages are installed:
 
