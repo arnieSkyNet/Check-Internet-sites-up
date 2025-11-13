@@ -96,7 +96,7 @@ Key bindings when GUI is open:
 - G : open GUI window if currently running console-only
 ---
 
-## ▶️ Usage
+## ▶️ Linux Usage
 Run manually:
 ```bash
 chkinetup 5 -d
