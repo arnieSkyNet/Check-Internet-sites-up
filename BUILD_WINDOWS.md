@@ -1,4 +1,4 @@
-# =à Windows Build & Run
+# 🛠️ Linux / Raspberry Pi Build & Install
 
 ## Clone Repository
 git clone https://github.com/arnieSkyNet/Check-Internet-sites-up.git
