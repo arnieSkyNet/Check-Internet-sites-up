@@ -1,5 +1,11 @@
 # 🛠️ Windows Build & Run
 
+## Release version
+Ready built binary
+<pre>
+https://github.com/arnieSkyNet/Check-Internet-sites-up/releases/tag/v0.10.02
+</pre>
+
 ## Clone Repository
 <pre>
 git clone https://github.com/arnieSkyNet/Check-Internet-sites-up.git
