@@ -39,6 +39,12 @@ Unlike ping:
 > In short: If `chkinetup` says your internet is down…  
 > your apps will **definitely** feel it too. ✅
 
+## 🛠️ MS Windows Release version
+Ready built binary
+<pre>
+https://github.com/arnieSkyNet/Check-Internet-sites-up/releases/tag/v0.10.02
+</pre>
+
 ## 🛠️ Build & Install
 Platform-specific build instructions are in separate files:
 
