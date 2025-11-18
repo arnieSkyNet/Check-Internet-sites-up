@@ -4,7 +4,7 @@
  * Copyright (c) 2025 arnieSkyNet
  * Licensed under the MIT License. See LICENSE file for details.
  */
- 
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -21,7 +21,7 @@
 #include <getopt.h>
 
 #define PROGRAM "chkinetup"
-#define VERSION "v0.09.01"
+#define VERSION "v0.09.02"
 #define MAX_HOSTS 50
 #define HOSTNAME_LEN 128
 #define USERNAME_LEN 64
@@ -47,11 +47,11 @@ void usage(FILE *stream) {
         "  delay                   Interval in seconds between checks (default: 5)\n\n"
         "Options:\n"
         "  -h, --help              Show this help message and exit\n"
-        "  -d, --debug             Enable debug output to screen and list hosts\n"
+        "  -d, --debug             Enable debug output and list hosts\n"
         "  -l, --logfile <name>    Set logfile name (default: <hostname>.log)\n"
         "  -L, --logdir <path>     Set logfile directory (default: $HOME/log)\n"
         "  -c, --checkfile <file>  File containing list of hosts to check (creates if missing)\n"
-        "  -C, --clearfile         Ignore existing host file if exists\n"
+        "  -C, --clearfile         Ignore existing host file and regenerate\n"
         "  -H, --builtin-hosts     Use built-in host list\n"
         "  -v, --version           Show program version\n\n"
         "Written by ChatGPT vGPT-5-mini via guidance and design and massive corrections by ArnieSkyNet\n",
@@ -125,6 +125,14 @@ int check_host(const char *host, const char *port) {
     return result;
 }
 
+// Get modification time of a file
+time_t get_mtime(const char *filename) {
+    struct stat st;
+    if (stat(filename, &st) == 0)
+        return st.st_mtime;
+    return 0;
+}
+
 // Load or create hosts file
 int load_hosts_from_file(const char *filename, char *hosts[], int max_hosts, const char *builtin_hosts[], int builtin_count) {
     int num_hosts = 0;
@@ -159,10 +167,10 @@ int main(int argc, char *argv[]) {
     char *hosts[MAX_HOSTS];
     int num_hosts = 0;
     int state[MAX_HOSTS];
+    time_t checkfile_mtime = 0;
 
     char *logfile_name=NULL, *logdir=NULL, *checkfile=NULL;
     int use_builtin_hosts=0, clear_host_file=0;
-    (void)clear_host_file;
 
     static struct option long_opts[] = {
         {"help", no_argument,0,'h'},
@@ -204,6 +212,18 @@ int main(int argc, char *argv[]) {
     gethostname(hostname,sizeof(hostname)-1);
     hostname[sizeof(hostname)-1]='\0';
 
+    // Handle -C option: clear host file if requested
+    if (clear_host_file && checkfile) {
+        if (access(checkfile, F_OK) == 0) {
+            if (unlink(checkfile) == 0) {
+                logmsg(NULL, "Existing host file removed due to -C option");
+                if (debug) printf("Deleted host file: %s\n", checkfile);
+            } else {
+                perror("Failed to remove host file");
+            }
+        }
+    }
+
     // Load hosts
     if(checkfile && !use_builtin_hosts)
         num_hosts = load_hosts_from_file(checkfile, hosts, MAX_HOSTS, default_hosts, 5);
@@ -235,10 +255,47 @@ int main(int argc, char *argv[]) {
     signal(SIGTERM, handle_signal);
     logmsg(NULL,"started");
 
+    if(checkfile)
+        checkfile_mtime = get_mtime(checkfile);
+
     int global_connected=1;
     while(!stop_program){
         int up=0;
         char restored_host[HOSTNAME_LEN]="";
+
+// Auto-reload host file if modified
+if (checkfile) {
+    time_t new_mtime = get_mtime(checkfile);
+    if (new_mtime > checkfile_mtime) {
+        logmsg(NULL, "Host file changed, reloading");
+
+        // Clear existing hosts
+        for (int i = 0; i < num_hosts; i++) {
+            free(hosts[i]);
+        }
+
+        num_hosts = load_hosts_from_file(checkfile, hosts, MAX_HOSTS,
+                                         default_hosts, 5);
+
+        // Reset states
+        for (int i = 0; i < num_hosts; i++) {
+            state[i] = -1;
+        }
+
+        checkfile_mtime = new_mtime;
+
+        // Log every host that is now active
+        for (int i = 0; i < num_hosts; i++) {
+            logmsg(hosts[i], "loaded from host file");
+        }
+
+        if (debug) {
+            printf("Reloaded hosts list:\n");
+            for (int i = 0; i < num_hosts; i++)
+                printf("  %s\n", hosts[i]);
+        }
+    }
+}
         for(int i=0;i<num_hosts;i++){
             int ok=check_host(hosts[i],"443");
             if(ok){
@@ -252,6 +309,7 @@ int main(int argc, char *argv[]) {
                 state[i]=0;
             }
         }
+
         if(up && !global_connected){ logmsg(restored_host,"Global connectivity restored"); global_connected=1;}
         if(!up && global_connected){ logmsg(NULL,"All hosts unreachable"); global_connected=0;}
         sleep(interval);
