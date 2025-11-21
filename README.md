@@ -9,6 +9,8 @@
 - Logs failures and restorations with timestamps
 - Lightweight — suitable for background service use
 - No dependencies beyond standard tools
+- Signal-safe termination (handles SIGINT and SIGTERM)
+- Monitoring of host file if used and changed
 ---
 
 ## 🔍 How Connectivity Is Checked (No Ping Required)
