@@ -1,6 +1,6 @@
 /*
  * chkinetup_win.c
- * Complete unified Windows build with help appended into GUI (v0.15).
+ * Complete unified Windows build with help appended into GUI (v0.10.03).
  *
  * Build instructions:
  * - Linker->System->Subsystem = Windows (/SUBSYSTEM:WINDOWS)
@@ -29,7 +29,7 @@
 
  // -------------------- Constants --------------------
 #define PROGRAM "chkinetup"
-#define VERSION "v0.10.02"
+#define VERSION "v0.10.03"
 #define MAX_HOSTS 50
 #define HOSTNAME_LEN 128
 #define USERNAME_LEN 64
@@ -54,6 +54,14 @@ bool hosts_are_builtin = true;
 DWORD mainThreadId = 0;
 bool console_attached = false;
 
+// host-file watcher globals
+char watched_checkfile[MAX_PATH] = ""; // full path to checkfile (if any)
+char watched_dir[MAX_PATH] = "";
+char watched_filename[MAX_PATH] = "";
+HANDLE hWatcherThread = NULL;
+bool watcher_thread_running = false;
+CRITICAL_SECTION hosts_lock;
+
 // -------------------- Custom PostMessage codes --------------------
 #define CMD_OPEN_GUI     (WM_APP+1)
 #define CMD_QUIT         (WM_APP+2)
@@ -77,13 +85,21 @@ void gui_show_hosts(void);
 void gui_show_logfile_contents(void);
 void append_to_gui_raw(const char* s);
 
+// host file helpers
+int load_hosts_from_file(const char* path, bool create_if_missing);
+void free_current_hosts(void);
+void start_watcher_if_needed(void);
+DWORD WINAPI WatcherThread(LPVOID lpParam);
+
 // -------------------- Convert CommandLine to argv --------------------
 static char** get_argv_from_CommandLineA(int* argc_out) {
     LPWSTR* wargv = CommandLineToArgvW(GetCommandLineW(), argc_out);
-    if (!wargv) return NULL;
+    if (!wargv) { *argc_out = 0; return NULL; }
     char** argv = (char**)malloc(sizeof(char*) * (*argc_out));
+    if (!argv) { LocalFree(wargv); *argc_out = 0; return NULL; }
     for (int i = 0; i < *argc_out; ++i) {
         int len = WideCharToMultiByte(CP_UTF8, 0, wargv[i], -1, NULL, 0, NULL, NULL);
+        if (len <= 0) { argv[i] = NULL; continue; }
         argv[i] = (char*)malloc(len);
         WideCharToMultiByte(CP_UTF8, 0, wargv[i], -1, argv[i], len, NULL, NULL);
     }
@@ -124,8 +140,6 @@ void usage(FILE* stream) {
 
 // Append the help text into the GUI log area (and to stdout if console is attached)
 void append_help_to_gui(void) {
-    // We'll create the same help text as usage() but append it into the GUI.
-    // Keep it in one string so it's easy to append.
     const char* help_text =
         "=== Help ===\r\n"
         "Usage: " PROGRAM " [options] [delay]\r\n"
@@ -155,7 +169,6 @@ void append_help_to_gui(void) {
 
     append_to_gui_raw(help_text);
     if (console_attached) {
-        // Also print to stdout if console present
         usage(stdout);
     }
 }
@@ -163,13 +176,29 @@ void append_help_to_gui(void) {
 // -------------------- Attach console --------------------
 void attach_console_if_needed(void) {
     if (console_attached) return;
-    AllocConsole();
-    freopen("CONIN$", "r", stdin);
-    freopen("CONOUT$", "w", stdout);
-    freopen("CONOUT$", "w", stderr);
+
+    // Try to attach to parent console first (the cmd.exe you started from)
+    if (!AttachConsole(ATTACH_PARENT_PROCESS)) {
+        // If that fails, create a new console window
+        AllocConsole();
+    }
+    HWND hwndConsole = GetConsoleWindow();
+    if (hwndConsole) ShowWindow(hwndConsole, SW_SHOW);
+
+    // Redirect standard IO to the console
+    if (freopen("CONIN$", "r", stdin) == NULL) {}
+    if (freopen("CONOUT$", "w", stdout) == NULL) {}
+    if (freopen("CONOUT$", "w", stderr) == NULL) {}
+
+    // Make stdout/stderr unbuffered so output appears immediately
     setvbuf(stdout, NULL, _IONBF, 0);
     setvbuf(stderr, NULL, _IONBF, 0);
+
+    // Flag to indicate console is available
     console_attached = true;
+
+    // Optional: set a console title for clarity
+    SetConsoleTitleA("Check-Internet-sites-up Debug");
 }
 
 // -------------------- Logging --------------------
@@ -192,7 +221,7 @@ void logmsg(const char* host, const char* msgfmt, ...) {
     struct tm t;
     localtime_s(&t, &now);
 
-    char line[768];
+    char line[1024];
     snprintf(line, sizeof(line),
         "[%02d:%02d:%04d %02d:%02d:%02d] %s - %s",
         t.tm_mday, t.tm_mon + 1, t.tm_year + 1900,
@@ -245,11 +274,15 @@ void gui_show_hosts(void) {
     append_to_gui_raw("=== Current host list ===\r\n");
     append_to_gui_raw(hosts_are_builtin ? "(Built-in hosts)\r\n" : "(Custom hosts)\r\n");
     append_to_gui_raw("------------------------\r\n");
+
+    EnterCriticalSection(&hosts_lock);
     for (int i = 0; i < num_hosts; i++) {
         append_to_gui_raw("  ");
-        append_to_gui_raw(hosts[i]);
+        append_to_gui_raw(hosts[i] ? hosts[i] : "(null)");
         append_to_gui_raw("\r\n");
     }
+    LeaveCriticalSection(&hosts_lock);
+
     append_to_gui_raw("\r\n");
 }
 
@@ -374,7 +407,7 @@ HWND create_gui_window(void) {
 
     // initial header: host list + delay + key hints
     char intro[256];
-    snprintf(intro, sizeof(intro), "=== Check Internet Sites Up %s (by arnieSkyNeyt) ===\r\n", VERSION);
+    snprintf(intro, sizeof(intro), "=== Check Internet Sites Up %s (by arnieSkyNet) ===\r\n", VERSION);
     append_to_gui_raw(intro);
     append_to_gui_raw("Keys: ?=Help (or 'h')  H=Hosts  D/d=Delay +/-  L=Log  Q=Quit  G=Open/Bring GUI\r\n");
     char header[256];
@@ -397,8 +430,13 @@ DWORD WINAPI CheckerThread(LPVOID lpParam) {
     (void)lpParam;
     while (!stop_program) {
         int up = 0; char restored_host[HOSTNAME_LEN] = { 0 };
+
+        EnterCriticalSection(&hosts_lock);
         for (int i = 0; i < num_hosts; i++) {
-            int ok = check_host(hosts[i], "443");
+            const char* h = hosts[i];
+            LeaveCriticalSection(&hosts_lock);
+            int ok = check_host(h, "443");
+            EnterCriticalSection(&hosts_lock);
             if (ok) {
                 if (state[i] == 0) logmsg(hosts[i], "connectivity restored");
                 state[i] = 1;
@@ -410,6 +448,8 @@ DWORD WINAPI CheckerThread(LPVOID lpParam) {
                 state[i] = 0;
             }
         }
+        LeaveCriticalSection(&hosts_lock);
+
         if (up && !global_connected) { logmsg(restored_host, "Global connectivity restored"); global_connected = 1; }
         if (!up && global_connected) { logmsg(NULL, "All hosts unreachable"); global_connected = 0; }
 
@@ -445,10 +485,174 @@ BOOL WINAPI ConsoleCtrlHandler(DWORD ctrlType) {
     return FALSE;
 }
 
+// -------------------- Host file helpers --------------------
+void free_current_hosts(void) {
+    EnterCriticalSection(&hosts_lock);
+    for (int i = 0; i < num_hosts; i++) {
+        if (hosts[i]) { free(hosts[i]); hosts[i] = NULL; }
+    }
+    num_hosts = 0;
+    LeaveCriticalSection(&hosts_lock);
+}
+
+int load_hosts_from_file(const char* path, bool create_if_missing) {
+    free_current_hosts();
+
+    if (!path || path[0] == '\0') return 0;
+
+    FILE* f = fopen(path, "r");
+    if (!f) {
+        if (create_if_missing) {
+            // try to create file (and containing dir)
+            char full[MAX_PATH];
+            strncpy(full, path, sizeof(full) - 1); full[sizeof(full) - 1] = '\0';
+            // create directory if necessary
+            char* last_sep = strrchr(full, '\\');
+            if (!last_sep) last_sep = strrchr(full, '/');
+            if (last_sep) {
+                *last_sep = '\0';
+                _mkdir(full); // ignore errors
+                *last_sep = '\\';
+            }
+            f = fopen(path, "w");
+            if (f) {
+                // write default hosts into the new file
+                const char* default_hosts[] = { "www.google.com", "www.cloudflare.com", "www.microsoft.com", "www.amazon.com" };
+                for (int i = 0; i < 4; ++i) fprintf(f, "%s\n", default_hosts[i]);
+                fclose(f);
+                f = fopen(path, "r");
+            }
+        }
+        if (!f) {
+            // couldn't open or create; fallback to builtin
+            const char* default_hosts[] = { "www.google.com", "www.cloudflare.com", "www.microsoft.com", "www.amazon.com" };
+            EnterCriticalSection(&hosts_lock);
+            for (int i = 0; i < 4 && i < MAX_HOSTS; ++i) hosts[num_hosts++] = _strdup(default_hosts[i]);
+            hosts_are_builtin = true;
+            LeaveCriticalSection(&hosts_lock);
+            return num_hosts;
+        }
+    }
+
+    // read file
+    char line[512];
+    EnterCriticalSection(&hosts_lock);
+    while (fgets(line, sizeof(line), f) && num_hosts < MAX_HOSTS) {
+        line[strcspn(line, "\r\n")] = 0;
+        if (line[0] == '\0') continue;
+        // skip comments
+        if (line[0] == '#') continue;
+        hosts[num_hosts++] = _strdup(line);
+    }
+    hosts_are_builtin = false;
+    LeaveCriticalSection(&hosts_lock);
+    fclose(f);
+    return num_hosts;
+}
+
+// Start watcher thread if checkfile is set (watched_checkfile contains full path)
+void start_watcher_if_needed(void) {
+    if (watched_checkfile[0] == '\0') return;
+    if (watcher_thread_running) return;
+
+    // extract directory and filename
+    char full[MAX_PATH];
+    if (!GetFullPathNameA(watched_checkfile, MAX_PATH, full, NULL)) {
+        strncpy(full, watched_checkfile, sizeof(full) - 1); full[sizeof(full) - 1] = '\0';
+    }
+    char* last_sep = strrchr(full, '\\');
+    if (!last_sep) last_sep = strrchr(full, '/');
+    if (last_sep) {
+        size_t dirlen = (size_t)(last_sep - full);
+        strncpy(watched_dir, full, dirlen);
+        watched_dir[dirlen] = '\0';
+        snprintf(watched_filename, sizeof(watched_filename), "%s", last_sep + 1);
+    }
+    else {
+        // no dir - use current dir
+        strcpy(watched_dir, ".");
+        snprintf(watched_filename, sizeof(watched_filename), "%s", full);
+    }
+
+    watcher_thread_running = true;
+    hWatcherThread = CreateThread(NULL, 0, WatcherThread, NULL, 0, NULL);
+}
+
+// Watcher thread implementation
+DWORD WINAPI WatcherThread(LPVOID lpParam) {
+    (void)lpParam;
+    WCHAR wdir[MAX_PATH];
+    MultiByteToWideChar(CP_UTF8, 0, watched_dir, -1, wdir, MAX_PATH);
+
+    HANDLE hDir = CreateFileW(wdir,
+        FILE_LIST_DIRECTORY,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        NULL,
+        OPEN_EXISTING,
+        FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OVERLAPPED,
+        NULL);
+
+    if (hDir == INVALID_HANDLE_VALUE) {
+        watcher_thread_running = false;
+        return 1;
+    }
+
+    // We will poll using ReadDirectoryChangesW synchronously for simplicity
+    char buffer[4096];
+    DWORD bytesReturned;
+
+    while (!stop_program) {
+        if (ReadDirectoryChangesW(hDir, buffer, sizeof(buffer), FALSE,
+            FILE_NOTIFY_CHANGE_LAST_WRITE | FILE_NOTIFY_CHANGE_SIZE | FILE_NOTIFY_CHANGE_CREATION,
+            &bytesReturned, NULL, NULL)) {
+
+            // parse notifications
+            FILE_NOTIFY_INFORMATION* fni = (FILE_NOTIFY_INFORMATION*)buffer;
+            while (fni) {
+                // convert file name to ANSI
+                int wlen = fni->FileNameLength / sizeof(WCHAR);
+                WCHAR wname[MAX_PATH];
+                int copy = min(wlen, MAX_PATH - 1);
+                wcsncpy_s(wname, MAX_PATH, fni->FileName, copy);
+                wname[copy] = L'\0';
+
+                char namebuf[MAX_PATH];
+                WideCharToMultiByte(CP_UTF8, 0, wname, -1, namebuf, sizeof(namebuf), NULL, NULL);
+
+                // compare with watched_filename (case-insensitive)
+                if (_stricmp(namebuf, watched_filename) == 0) {
+                    // small delay to allow write to complete
+                    Sleep(200);
+                    logmsg(NULL, "Detected change in host file '%s', reloading", watched_checkfile);
+                    load_hosts_from_file(watched_checkfile, false);
+                    // update GUI
+                    if (hMainWnd) PostMessageA(hMainWnd, WM_CHAR, (WPARAM)'H', 0);
+                }
+
+                if (fni->NextEntryOffset == 0) break;
+                fni = (FILE_NOTIFY_INFORMATION*)((char*)fni + fni->NextEntryOffset);
+            }
+        }
+        else {
+            // ReadDirectoryChangesW failed; small sleep and retry
+            Sleep(1000);
+        }
+    }
+
+    CloseHandle(hDir);
+    watcher_thread_running = false;
+    return 0;
+}
+
 // -------------------- Main logic --------------------
 int run_with_argv(int argc, char** argv) {
     bool forceGUI = false, forceConsole = false;
     char logfile_name[MAX_PATH] = "", checkfile[MAX_PATH] = "";
+    bool clearfile_flag = false;
+    bool use_builtin_hosts = false;
+
+    // quick nargs safety
+    if (argc < 0) argc = 0;
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) { usage(stdout); return 0; }
@@ -460,37 +664,75 @@ int run_with_argv(int argc, char** argv) {
         if ((strcmp(argv[i], "-l") == 0 || strcmp(argv[i], "--logfile") == 0) && i + 1 < argc) strncpy(logfile_name, argv[++i], sizeof(logfile_name) - 1);
         if ((strcmp(argv[i], "-L") == 0 || strcmp(argv[i], "--logdir") == 0) && i + 1 < argc) strncpy(logdir, argv[++i], sizeof(logdir) - 1);
         if ((strcmp(argv[i], "-c") == 0 || strcmp(argv[i], "--checkfile") == 0) && i + 1 < argc) strncpy(checkfile, argv[++i], sizeof(checkfile) - 1);
+        if (strcmp(argv[i], "-C") == 0 || strcmp(argv[i], "--clearfile") == 0) clearfile_flag = true;
+        if (strcmp(argv[i], "-H") == 0 || strcmp(argv[i], "--builtin-hosts") == 0) use_builtin_hosts = true;
         int val = atoi(argv[i]); if (val > 0) interval = val;
     }
 
     if (logdir[0] == '\0') { const char* up = getenv("USERPROFILE"); if (!up) up = "."; snprintf(logdir, sizeof(logdir), "%s\\log", up); }
-    _mkdir(logdir);
+    if (_mkdir(logdir) != 0) {
+        // ignore mkdir error
+    }
 
-    DWORD ulen = UNLEN + 1; GetUserNameA(username, &ulen);
-    gethostname(hostname_buf, sizeof(hostname_buf));
+    // safe username: gather with larger buffer then copy safely
+    {
+        char unamebuf[UNLEN + 1];
+        DWORD ulen = UNLEN + 1;
+        if (GetUserNameA(unamebuf, &ulen)) {
+            strncpy(username, unamebuf, USERNAME_LEN - 1);
+            username[USERNAME_LEN - 1] = '\0';
+        }
+        else {
+            strncpy(username, "unknown", USERNAME_LEN - 1);
+            username[USERNAME_LEN - 1] = '\0';
+        }
+    }
+    gethostname(hostname_buf, sizeof(hostname_buf) - 1);
+    hostname_buf[sizeof(hostname_buf) - 1] = '\0';
 
     if (logfile_name[0]) snprintf(logfile_fullpath, sizeof(logfile_fullpath), "%s\\%s", logdir, logfile_name);
     else snprintf(logfile_fullpath, sizeof(logfile_fullpath), "%s\\%s.log", logdir, hostname_buf);
 
     log_file = fopen(logfile_fullpath, "a");
 
+    InitializeCriticalSection(&hosts_lock);
+
+    // Handle checkfile / clearfile / load
     if (checkfile[0]) {
-        FILE* cf = fopen(checkfile, "r");
-        if (cf) {
-            char line[256]; num_hosts = 0; hosts_are_builtin = false;
-            while (fgets(line, sizeof(line), cf) && num_hosts < MAX_HOSTS) {
-                line[strcspn(line, "\r\n")] = 0; if (line[0] == '\0') continue;
-                hosts[num_hosts++] = _strdup(line);
-            }
-            fclose(cf);
+        // copy full path into global watched_checkfile
+        if (!GetFullPathNameA(checkfile, MAX_PATH, watched_checkfile, NULL)) {
+            strncpy(watched_checkfile, checkfile, sizeof(watched_checkfile) - 1);
+            watched_checkfile[sizeof(watched_checkfile) - 1] = '\0';
         }
-        else hosts_are_builtin = true;
+
+        if (clearfile_flag) {
+            // delete the file if exists
+            if (GetFileAttributesA(watched_checkfile) != INVALID_FILE_ATTRIBUTES) {
+                if (!DeleteFileA(watched_checkfile)) {
+                    logmsg(NULL, "Warning: could not delete host file '%s' (GetLastError=%lu)", watched_checkfile, GetLastError());
+                }
+                else {
+                    logmsg(NULL, "Host file '%s' removed due to -C option", watched_checkfile);
+                }
+            }
+        }
+
+        // Load hosts from file; if file missing create it with defaults
+        num_hosts = load_hosts_from_file(watched_checkfile, true);
+        hosts_are_builtin = false;
+
+        // start watcher thread to watch that file
+        start_watcher_if_needed();
     }
-    if (num_hosts == 0) {
+    else {
+        // No custom checkfile specified -> use built-in hosts
         const char* default_hosts[] = { "www.google.com","www.cloudflare.com","www.microsoft.com","www.amazon.com" };
-        num_hosts = 4; hosts_are_builtin = true;
-        for (int i = 0; i < num_hosts; i++) hosts[i] = _strdup(default_hosts[i]);
+        EnterCriticalSection(&hosts_lock);
+        for (int i = 0; i < 4 && i < MAX_HOSTS; ++i) hosts[num_hosts++] = _strdup(default_hosts[i]);
+        hosts_are_builtin = true;
+        LeaveCriticalSection(&hosts_lock);
     }
+
     for (int i = 0; i < num_hosts; i++) state[i] = -1;
 
     console_attached = (forceConsole || debug);
@@ -540,18 +782,50 @@ int run_with_argv(int argc, char** argv) {
     }
 
     // cleanup
+    stop_program = 1;
+    if (hWatcherThread) {
+        // Wait for watcher thread to exit
+        WaitForSingleObject(hWatcherThread, 2000);
+        CloseHandle(hWatcherThread);
+        hWatcherThread = NULL;
+    }
+
     if (hChecker) { WaitForSingleObject(hChecker, INFINITE); CloseHandle(hChecker); }
     if (hConsole) { WaitForSingleObject(hConsole, INFINITE); CloseHandle(hConsole); }
 
     WSACleanup();
     if (log_file) fclose(log_file);
+
+    free_current_hosts();
+    DeleteCriticalSection(&hosts_lock);
+
     return 0;
 }
 
 // -------------------- WinMain --------------------
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
-    int argc; char** argv = get_argv_from_CommandLineA(&argc);
-    int res = run_with_argv(argc, argv);
-    if (argv) { for (int i = 0; i < argc; ++i) free(argv[i]); free(argv); }
+
+    int argc = 0;
+    char** argv = get_argv_from_CommandLineA(&argc);
+
+    int res = 1;  // default return value
+
+    if (argv != NULL && argc > 0) {
+        res = run_with_argv(argc, argv);
+    }
+    else {
+        // No argv available -> run with defaults
+        char* fake_argv[1];
+        fake_argv[0] = (char*)PROGRAM;
+        res = run_with_argv(1, fake_argv);
+    }
+
+    if (argv) {
+        for (int i = 0; i < argc; ++i) {
+            if (argv[i]) free(argv[i]);
+        }
+        free(argv);
+    }
+
     return res;
 }
