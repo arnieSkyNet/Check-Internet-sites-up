@@ -1,6 +1,6 @@
 /*
  * chkinetup_win.c
- * Complete unified Windows build with help appended into GUI (v0.10.03).
+ * Complete unified Windows build with help appended into GUI (v0.15 -> v0.10.03).
  *
  * Build instructions:
  * - Linker->System->Subsystem = Windows (/SUBSYSTEM:WINDOWS)
@@ -33,8 +33,9 @@
 #define MAX_HOSTS 50
 #define HOSTNAME_LEN 128
 #define USERNAME_LEN 64
+#define DEFAULT_HOSTFILE_NAME "hosts.txt"
 
-// -------------------- Globals --------------------
+ // -------------------- Globals --------------------
 HWND hMainWnd = NULL;
 HWND hLogWindow = NULL;
 static WNDPROC g_origEditProc = NULL;    // original edit proc (for subclass)
@@ -63,13 +64,16 @@ bool watcher_thread_running = false;
 CRITICAL_SECTION hosts_lock;
 
 // -------------------- Custom PostMessage codes --------------------
-#define CMD_OPEN_GUI     (WM_APP+1)
-#define CMD_QUIT         (WM_APP+2)
-#define CMD_SHOW_HELP    (WM_APP+3)
-#define CMD_SHOW_HOSTS   (WM_APP+4)
-#define CMD_SHOW_LOGFILE (WM_APP+5)
-#define CMD_INC_DELAY    (WM_APP+6)
-#define CMD_DEC_DELAY    (WM_APP+7)
+#define CMD_OPEN_GUI         (WM_APP+1)
+#define CMD_QUIT             (WM_APP+2)
+#define CMD_SHOW_HELP        (WM_APP+3)
+#define CMD_SHOW_HOSTS       (WM_APP+4)
+#define CMD_SHOW_LOGFILE     (WM_APP+5)
+#define CMD_INC_DELAY        (WM_APP+6)
+#define CMD_DEC_DELAY        (WM_APP+7)
+#define CMD_CLEAR_HOSTFILE   (WM_APP+8)
+#define CMD_CREATE_HOSTFILE  (WM_APP+9)
+#define CMD_CLEAR_LOGFILE    (WM_APP+10)
 
 // -------------------- Forward declarations --------------------
 void usage(FILE* stream);
@@ -90,6 +94,13 @@ int load_hosts_from_file(const char* path, bool create_if_missing);
 void free_current_hosts(void);
 void start_watcher_if_needed(void);
 DWORD WINAPI WatcherThread(LPVOID lpParam);
+
+// action helpers
+void do_clear_hostfile_and_reload(void);
+void do_create_hostfile_if_missing(void);
+void do_clear_logfile(void);
+void ensure_watched_file_set_to_default(void);
+void get_exe_dir(char* out_dir, size_t out_len);
 
 // -------------------- Convert CommandLine to argv --------------------
 static char** get_argv_from_CommandLineA(int* argc_out) {
@@ -133,7 +144,10 @@ void usage(FILE* stream) {
         "  d: Decrease delay by 1 second\n"
         "  L: Show log file path and contents\n"
         "  Q: Quit program\n"
-        "  G: Open GUI window if currently running in console only (or bring to front)\n\n",
+        "  G: Open GUI window if currently running in console only (or bring to front)\n"
+        "  C: Clear host file and reload defaults (delete and recreate)\n"
+        "  c: Create host file if missing (create with defaults)\n"
+        "  l: Clear log file contents\n\n",
         PROGRAM, VERSION, PROGRAM
     );
 }
@@ -165,6 +179,9 @@ void append_help_to_gui(void) {
         "  L: Show log file path and contents\r\n"
         "  Q: Quit program\r\n"
         "  G: Open GUI window if currently running in console only (or bring to front)\r\n"
+        "  C: Clear host file and reload defaults (delete and recreate)\r\n"
+        "  c: Create host file if missing (create with defaults)\r\n"
+        "  l: Clear log file contents\r\n"
         "\r\n";
 
     append_to_gui_raw(help_text);
@@ -344,6 +361,18 @@ LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
         else if (c == 'L') {
             gui_show_logfile_contents();
         }
+        else if (c == 'C') {
+            // Clear host file and reload defaults
+            do_clear_hostfile_and_reload();
+        }
+        else if (c == 'c') {
+            // Create host file if missing
+            do_create_hostfile_if_missing();
+        }
+        else if (c == 'l') {
+            // Clear logfile contents
+            do_clear_logfile();
+        }
         else if (c == 'Q' || c == 'q') {
             stop_program = 1;
             PostQuitMessage(0);
@@ -470,9 +499,12 @@ DWORD WINAPI ConsoleInputThread(LPVOID lpParam) {
             else if (ch == 'Q' || ch == 'q') PostThreadMessage(mainThreadId, CMD_QUIT, 0, 0);
             else if (ch == 'H') PostThreadMessage(mainThreadId, CMD_SHOW_HOSTS, 0, 0);
             else if (ch == 'h' || ch == '?') PostThreadMessage(mainThreadId, CMD_SHOW_HELP, 0, 0);
-            else if (ch == 'L' || ch == 'l') PostThreadMessage(mainThreadId, CMD_SHOW_LOGFILE, 0, 0);
+            else if (ch == 'L') PostThreadMessage(mainThreadId, CMD_SHOW_LOGFILE, 0, 0);
             else if (ch == 'D') PostThreadMessage(mainThreadId, CMD_INC_DELAY, 0, 0);
             else if (ch == 'd') PostThreadMessage(mainThreadId, CMD_DEC_DELAY, 0, 0);
+            else if (ch == 'C') PostThreadMessage(mainThreadId, CMD_CLEAR_HOSTFILE, 0, 0);
+            else if (ch == 'c') PostThreadMessage(mainThreadId, CMD_CREATE_HOSTFILE, 0, 0);
+            else if (ch == 'l') PostThreadMessage(mainThreadId, CMD_CLEAR_LOGFILE, 0, 0);
         }
         Sleep(100);
     }
@@ -510,9 +542,10 @@ int load_hosts_from_file(const char* path, bool create_if_missing) {
             char* last_sep = strrchr(full, '\\');
             if (!last_sep) last_sep = strrchr(full, '/');
             if (last_sep) {
+                char saved = *last_sep;
                 *last_sep = '\0';
                 _mkdir(full); // ignore errors
-                *last_sep = '\\';
+                *last_sep = saved;
             }
             f = fopen(path, "w");
             if (f) {
@@ -644,6 +677,126 @@ DWORD WINAPI WatcherThread(LPVOID lpParam) {
     return 0;
 }
 
+// -------------------- Action helpers --------------------
+void get_exe_dir(char* out_dir, size_t out_len) {
+    char exe_path[MAX_PATH];
+    if (GetModuleFileNameA(NULL, exe_path, MAX_PATH) == 0) {
+        strncpy(out_dir, ".", out_len - 1);
+        out_dir[out_len - 1] = '\0';
+        return;
+    }
+    char* last_sep = strrchr(exe_path, '\\');
+    if (!last_sep) last_sep = strrchr(exe_path, '/');
+    if (last_sep) {
+        size_t dirlen = (size_t)(last_sep - exe_path);
+        if (dirlen >= out_len) dirlen = out_len - 1;
+        strncpy(out_dir, exe_path, dirlen);
+        out_dir[dirlen] = '\0';
+    }
+    else {
+        strncpy(out_dir, ".", out_len - 1);
+        out_dir[out_len - 1] = '\0';
+    }
+}
+
+// Ensure watched_checkfile is set to default hosts.txt in EXE dir when no -c provided
+void ensure_watched_file_set_to_default(void) {
+    EnterCriticalSection(&hosts_lock);
+    if (watched_checkfile[0] != '\0') { LeaveCriticalSection(&hosts_lock); return; }
+    LeaveCriticalSection(&hosts_lock);
+
+    char exedir[MAX_PATH];
+    get_exe_dir(exedir, sizeof(exedir));
+    char default_path[MAX_PATH];
+    snprintf(default_path, sizeof(default_path), "%s\\%s", exedir, DEFAULT_HOSTFILE_NAME);
+
+    EnterCriticalSection(&hosts_lock);
+    strncpy(watched_checkfile, default_path, sizeof(watched_checkfile) - 1);
+    watched_checkfile[sizeof(watched_checkfile) - 1] = '\0';
+    LeaveCriticalSection(&hosts_lock);
+}
+
+// Delete host file and recreate with defaults then reload
+void do_clear_hostfile_and_reload(void) {
+    EnterCriticalSection(&hosts_lock);
+    if (watched_checkfile[0] == '\0') {
+        LeaveCriticalSection(&hosts_lock);
+        ensure_watched_file_set_to_default();
+        EnterCriticalSection(&hosts_lock);
+    }
+    char path_copy[MAX_PATH];
+    strncpy(path_copy, watched_checkfile, sizeof(path_copy) - 1);
+    path_copy[sizeof(path_copy) - 1] = '\0';
+    LeaveCriticalSection(&hosts_lock);
+
+    if (GetFileAttributesA(path_copy) != INVALID_FILE_ATTRIBUTES) {
+        if (!DeleteFileA(path_copy)) {
+            logmsg(NULL, "Warning: could not delete host file '%s' (GetLastError=%lu)", path_copy, GetLastError());
+        }
+        else {
+            logmsg(NULL, "Host file '%s' removed by user action", path_copy);
+        }
+    }
+    // recreate & reload
+    int n = load_hosts_from_file(path_copy, true);
+    logmsg(NULL, "Host file cleared and reloaded (%d hosts)", n);
+    // ensure watcher is active
+    start_watcher_if_needed();
+    if (hMainWnd) PostMessageA(hMainWnd, WM_CHAR, (WPARAM)'H', 0);
+}
+
+// Create host file if missing (with defaults) and reload
+void do_create_hostfile_if_missing(void) {
+    EnterCriticalSection(&hosts_lock);
+    if (watched_checkfile[0] == '\0') {
+        LeaveCriticalSection(&hosts_lock);
+        ensure_watched_file_set_to_default();
+        EnterCriticalSection(&hosts_lock);
+    }
+    char path_copy[MAX_PATH];
+    strncpy(path_copy, watched_checkfile, sizeof(path_copy) - 1);
+    path_copy[sizeof(path_copy) - 1] = '\0';
+    LeaveCriticalSection(&hosts_lock);
+
+    if (GetFileAttributesA(path_copy) == INVALID_FILE_ATTRIBUTES) {
+        int n = load_hosts_from_file(path_copy, true);
+        logmsg(NULL, "Created host file '%s' (%d hosts)", path_copy, n);
+    }
+    else {
+        // already exists -> reload
+        int n = load_hosts_from_file(path_copy, false);
+        logmsg(NULL, "Host file '%s' exists, reloaded (%d hosts)", path_copy, n);
+    }
+    // ensure watcher is active
+    start_watcher_if_needed();
+    if (hMainWnd) PostMessageA(hMainWnd, WM_CHAR, (WPARAM)'H', 0);
+}
+
+// Truncate/clear the logfile
+void do_clear_logfile(void) {
+    if (logfile_fullpath[0] == '\0') {
+        // nothing to do, create path
+        char exedir[MAX_PATH];
+        get_exe_dir(exedir, sizeof(exedir));
+        snprintf(logfile_fullpath, sizeof(logfile_fullpath), "%s\\%s.log", exedir, hostname_buf);
+    }
+    // close existing handle if open
+    if (log_file) { fclose(log_file); log_file = NULL; }
+    // truncate file
+    FILE* f = fopen(logfile_fullpath, "w");
+    if (f) {
+        fclose(f);
+        logmsg(NULL, "Log file '%s' truncated by user action", logfile_fullpath);
+    }
+    else {
+        logmsg(NULL, "Warning: unable to truncate log file '%s'", logfile_fullpath);
+    }
+    // reopen for append
+    log_file = fopen(logfile_fullpath, "a");
+    if (!log_file && console_attached) fprintf(stderr, "Warning: cannot reopen logfile %s\n", logfile_fullpath);
+    if (hMainWnd) PostMessageA(hMainWnd, WM_CHAR, (WPARAM)'L', 0);
+}
+
 // -------------------- Main logic --------------------
 int run_with_argv(int argc, char** argv) {
     bool forceGUI = false, forceConsole = false;
@@ -725,7 +878,7 @@ int run_with_argv(int argc, char** argv) {
         start_watcher_if_needed();
     }
     else {
-        // No custom checkfile specified -> use built-in hosts
+        // No custom checkfile specified -> use built-in hosts (but allow creating default file later)
         const char* default_hosts[] = { "www.google.com","www.cloudflare.com","www.microsoft.com","www.amazon.com" };
         EnterCriticalSection(&hosts_lock);
         for (int i = 0; i < 4 && i < MAX_HOSTS; ++i) hosts[num_hosts++] = _strdup(default_hosts[i]);
@@ -775,6 +928,16 @@ int run_with_argv(int argc, char** argv) {
             else if (msg.message == CMD_SHOW_HELP) {
                 append_help_to_gui();
             }
+            else if (msg.message == CMD_CLEAR_HOSTFILE) {
+                do_clear_hostfile_and_reload();
+            }
+            else if (msg.message == CMD_CREATE_HOSTFILE) {
+                do_create_hostfile_if_missing();
+            }
+            else if (msg.message == CMD_CLEAR_LOGFILE) {
+                do_clear_logfile();
+            }
+
             TranslateMessage(&msg);
             DispatchMessage(&msg);
         }
