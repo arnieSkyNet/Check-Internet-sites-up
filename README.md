@@ -48,7 +48,7 @@ Unlike ping:
 **Platform:** Microsoft Windows  
 **Build type:** Ready-built binary  
 
-You can download the release here: [Download v0.10.02](https://github.com/arnieSkyNet/Check-Internet-sites-up/releases/tag/v0.10.03)
+You can download the release here: [Download v0.10.03](https://github.com/arnieSkyNet/Check-Internet-sites-up/releases/tag/v0.10.03)
 
 ### Changelog
 - Initial Windows GUI and console combined build  
