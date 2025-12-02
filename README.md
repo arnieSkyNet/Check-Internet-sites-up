@@ -2,7 +2,7 @@
 
 **Check Internet Up** (`chkinetup`) is a lightweight Linux internet connectivity monitor, ideal for Raspberry Pi, home automation, and remote-access systems. It regularly checks connectivity and logs outages, helping diagnose Wi-Fi drops, router failures, or ISP issues.  
 
----
+Inspired by a [Dave Plummer](https://github.com/davepl) youtube episode
 ## ✨ Features
 - Runs on Raspberry Pi, Linux, and Windows
 - Detects Internet connectivity loss quickly
