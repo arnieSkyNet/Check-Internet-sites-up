@@ -63,7 +63,7 @@ void usage(FILE *stream) {
 void logmsg(const char *host, const char *msg) {
     time_t now = time(NULL);
     struct tm *t = localtime(&now);
-    fprintf(log_file, "[%02d:%02d:%04d %02d:%02d:%02d %s %d %s] %s - %s\n",
+    fprintf(log_file, "[%02d-%02d-%04d %02d:%02d:%02d %s %d %s] %s - %s\n",
             t->tm_mday, t->tm_mon + 1, t->tm_year + 1900,
             t->tm_hour, t->tm_min, t->tm_sec,
             PROGRAM, interval, VERSION,
@@ -71,7 +71,7 @@ void logmsg(const char *host, const char *msg) {
     fflush(log_file);
 
     if (debug) {
-        printf("[%02d:%02d:%04d %02d:%02d:%02d DEBUG] %s - %s\n",
+        printf("[%02d-%02d-%04d %02d:%02d:%02d DEBUG] %s - %s\n",
                t->tm_mday, t->tm_mon + 1, t->tm_year + 1900,
                t->tm_hour, t->tm_min, t->tm_sec,
                host ? host : hostname, msg);
